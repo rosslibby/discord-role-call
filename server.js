@@ -1,14 +1,23 @@
 import Discord from 'discord.js'
+import redis from 'redis'
 import express from 'express'
 import bodyParser from 'body-parser'
 import dotenv from 'dotenv'
 import axios from 'axios'
 dotenv.config()
 
-const {env: {DISCORD_TOKEN, PORT}} = process
+const {env: {DISCORD_TOKEN, PORT, REDIS_URL}} = process
 const client = new Discord.Client()
 
+/**
+ * Redis
+ */
+const Redis = redis.createClient(REDIS_URL)
+Redis.on('error', err => console.log(err))
+Redis.on('connect', () => console.log('redis has connected'))
+
 const logAttendance = async message => {
+  Redis.set(`channel_#${message.channel.id}`)
   const response = await axios({
     url: 'http://localhost:8080/log',
     method: 'POST',
