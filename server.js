@@ -64,7 +64,13 @@ const logAttendance = (channel, user, date) => {
 }
 
 const attendanceLog = (channel, date) => {
-  Redis.get(`attendance#${channel}:${date}`, (err, reply) => console.log(JSON.parse(reply).students))
+  Redis.get(`attendance#${channel}:${date}`, (err, reply) => {
+    if (reply) console.log(JSON.parse(reply).students)
+  })
+}
+
+const clearAttendance = (channel, date) => {
+  Redis.del(`attendance#${channel}:${date}`)
 }
 
 /**
@@ -102,6 +108,7 @@ client.on('message', async message => {
     else if (content === '/close attendance') closeAttendance(channel.id)
     else if (content === '/end class') endClass(channel.id)
     else if (content === '/attendance log') attendanceLog(channel.id, today)
+    else if (content === '/clear attendance') clearAttendance(channel.id, today)
   }
     if (content === 'here' || content === 'hizzle' || content === 'present') logAttendance(channel.id, message.member.user.id, today)
 
