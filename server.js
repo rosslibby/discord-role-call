@@ -21,35 +21,50 @@ const startClass = (channel, date) => {
     status: 'open',
     id: `${channel}:${date}`
   }))
+
+  // build attendance structure
+  Redis.set(`attendance#${channel}:${date}`, JSON.stringify({
+    students: []
+  }))
 }
 
-const closeAttendance = channel => {
-  Redis.get(`channel#${channel}_attendance`, (err, reply) => Redis.set(`channel#${channel}_attendance`, JSON.stringify({...JSON.parse(reply), status: 'late'})))
+const closeAttendance = channel => Redis.get(
+  `channel#${channel}_attendance`,
+  (err, reply) => Redis.set(`channel#${channel}_attendance`, JSON.stringify({...JSON.parse(reply), status: 'late'}))
+)
+
+const endClass = channel => Redis.set(
+  `channel#${channel}_attendance`,
+  JSON.stringify({status: 'closed'})
+)
+
+const logAttendance = (channel, user, date) => {
+  Redis.get(`channel#${channel}_attendance`, (err, reply) => {
+    const data = JSON.parse(reply)
+
+    Redis.get(`attendance#${channel}:${date}`, (err, reply) => {
+      const attendance = JSON.parse(reply)
+      const students = attendance.students
+      const student = {
+        student: user
+      }
+
+      if (data.status === 'open') student.status = 'present'
+      else if (data.status === 'late') student.status = 'late'
+
+      if (student.status === 'present' || student.status === 'late') {
+        // Only save if not already exists
+        if (students.findIndex(student => student.student === user) === -1) {
+          students.push(student)
+          Redis.set(`attendance#${channel}:${date}`, JSON.stringify({students}))
+        }
+      }
+    })
+  })
 }
 
-const endClass = channel => Redis.set(`channel#${channel}_attendance`, JSON.stringify({status: 'closed'}))
-
-const trackStudent = (channel, user) => {
-  console.log(channel)
-  console.log(user)
-  Redis.get(`channel_#${channel}`, (err, reply) => console.log(reply))
-}
-
-const logAttendance = async message => {
-  Redis.set(`channel_#${message.channel.id}`)
-  const response = await axios({
-    url: 'http://localhost:8080/log',
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    data: {
-      channelId: message.channel.id,
-      channel: message.channel.name,
-      user: message.author.username + '#' + message.author.discriminator
-    }
-  }).then(async res => await res)
-  .catch(async err => await err)
-
-  return response.data
+const attendanceLog = (channel, date) => {
+  Redis.get(`attendance#${channel}:${date}`, (err, reply) => console.log(JSON.parse(reply).students))
 }
 
 /**
@@ -86,10 +101,10 @@ client.on('message', async message => {
       || content === '/rolecall') startClass(channel.id, today)
     else if (content === '/close attendance') closeAttendance(channel.id)
     else if (content === '/end class') endClass(channel.id)
-  } else {
-    if (content === 'here' || content === 'hizzle' || content === 'present') trackStudent(channel.id, message.member.user.id)
+    else if (content === '/attendance log') attendanceLog(channel.id, today)
   }
+    if (content === 'here' || content === 'hizzle' || content === 'present') logAttendance(channel.id, message.member.user.id, today)
+
 })
 
-// client.on('message', async msg => msg.content === 'here' ? console.log(await logAttendance(msg)) : null)
 client.login(DISCORD_TOKEN)
