@@ -44,17 +44,22 @@ const logAttendance = (channel, user, date) => {
 
     Redis.get(`attendance#${channel}:${date}`, (err, reply) => {
       const attendance = JSON.parse(reply)
+      if (!attendance) return
+
       const students = attendance.students
       const student = {
-        student: user
+        id: user.user.id
       }
+
+      if (user.nickname) student.name = user.nickname
+      else student.name = user.user.username
 
       if (data.status === 'open') student.status = 'present'
       else if (data.status === 'late') student.status = 'late'
 
       if (student.status === 'present' || student.status === 'late') {
         // Only save if not already exists
-        if (students.findIndex(student => student.student === user) === -1) {
+        if (students.findIndex(student => student.id === user.user.id) === -1) {
           students.push(student)
           Redis.set(`attendance#${channel}:${date}`, JSON.stringify({students}))
         }
@@ -63,9 +68,23 @@ const logAttendance = (channel, user, date) => {
   })
 }
 
-const attendanceLog = (channel, date) => {
+const attendanceLog = (message, channel, date) => {
   Redis.get(`attendance#${channel}:${date}`, (err, reply) => {
-    if (reply) console.log(JSON.parse(reply).students)
+    if (reply) {
+      let attended = ''
+      const students = JSON.parse(reply).students
+      const onTime = students.filter(student => student.status === 'present')
+        .map(student => student.name)
+      const late = students.filter(student => student.status === 'late')
+        .map(student => student.name)
+      const ontimeString = onTime.length ? onTime.join('\n') : "Nobody has attended"
+      const lateString = late.length ? late.join('\n') : "Nobody is late\n"
+      attended = '**On time:**\n'
+        + ontimeString
+        + '\n\n**Late:**\n'
+        + lateString
+      message.author.send(attended)
+    }
   })
 }
 
@@ -79,7 +98,6 @@ const clearAttendance = (channel, date) => {
 const app = express()
 app.use(bodyParser.json())
 app.post('/log', (req, res) => {
-  console.log(req.body)
   res.send('Logged in style')
 })
 app.listen(PORT, () => console.log(`Listening on ${PORT}`))
@@ -94,24 +112,25 @@ client.on('message', async message => {
   const today = `${date.getFullYear()}${month}${day}`
 
   // Determine the teacher role ID
-  const teacher = message.channel.guild.roles.cache.filter(item => item.name === 'Teacher').first().id
+  const teacher = message.channel.guild ? message.channel.guild.roles.cache.filter(item => item.name === 'Teacher').first().id : null
 
   // If the member is a teacher, process teacher commands
-  if (message.member._roles.findIndex(role => role === teacher) > -1) {
-    // Determine which command teacher is using
-    if (content === '/start class'
-      || content === '/startclass'
-      || content === 'start class'
-      || content === 'attendance'
-      || content === '/attendance'
-      || content === '/rolecall') startClass(channel.id, today)
-    else if (content === '/close attendance') closeAttendance(channel.id)
-    else if (content === '/end class') endClass(channel.id)
-    else if (content === '/attendance log') attendanceLog(channel.id, today)
-    else if (content === '/clear attendance') clearAttendance(channel.id, today)
+  if (message.member) {
+    if (message.member._roles.findIndex(role => role === teacher) > -1) {
+      // Determine which command teacher is using
+      if (content === '/start class'
+        || content === '/startclass'
+        || content === 'start class'
+        || content === 'attendance'
+        || content === '/attendance'
+        || content === '/rolecall') startClass(channel.id, today)
+      else if (content === '/close attendance') closeAttendance(channel.id)
+      else if (content === '/end class') endClass(channel.id)
+      else if (content === '/attendance log') attendanceLog(message, channel.id, today)
+      else if (content === '/clear attendance') clearAttendance(channel.id, today)
+    }
+    if (content === 'here' || content === 'hizzle' || content === 'present') logAttendance(channel.id, message.member, today)
   }
-    if (content === 'here' || content === 'hizzle' || content === 'present') logAttendance(channel.id, message.member.user.id, today)
-
 })
 
 client.login(DISCORD_TOKEN)
